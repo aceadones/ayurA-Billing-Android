@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { useClinicStore } from "@/stores/clinic-store";
 import { useSyncStore } from "@/stores/sync-store";
+import { useKioskMode } from "@/hooks/use-kiosk-mode";
 
 export function AppBootstrap({ children }: { children: React.ReactNode }) {
   const loadClinic = useClinicStore((s) => s.load);
   const refreshSync = useSyncStore((s) => s.refresh);
+  useKioskMode();
 
   useEffect(() => {
     void loadClinic();

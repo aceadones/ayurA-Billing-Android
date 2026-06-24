@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { resolveClinicLogo } from "@/lib/brand";
 
 interface ClinicLogoProps {
   clinicName?: string;
@@ -16,13 +17,6 @@ const sizes = {
   xl: { box: 80, image: 80, name: "text-2xl" },
 };
 
-function clinicInitials(name?: string): string {
-  if (!name?.trim()) return "C";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
 export function ClinicLogo({
   clinicName = "Clinic",
   logoUri,
@@ -35,26 +29,15 @@ export function ClinicLogo({
   const isWhite = variant === "white";
   const showText = variant !== "icon-only";
   const stacked = layout === "stacked";
+  const imageSrc = resolveClinicLogo(logoUri);
 
-  const mark = logoUri ? (
+  const mark = (
     <img
-      src={logoUri}
+      src={imageSrc}
       alt={clinicName}
-      className="rounded-xl object-contain bg-white"
+      className="rounded-full object-contain shrink-0"
       style={{ width: s.image, height: s.image }}
     />
-  ) : (
-    <div
-      className={cn(
-        "flex items-center justify-center rounded-xl shrink-0 font-display font-semibold",
-        isWhite
-          ? "bg-white/15 border border-white/25 text-white"
-          : "bg-ayura-green-light border border-border text-ayura-green",
-      )}
-      style={{ width: s.box, height: s.box, fontSize: s.box * 0.32 }}
-    >
-      {clinicInitials(clinicName)}
-    </div>
   );
 
   if (!showText) {

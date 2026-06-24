@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -23,6 +23,10 @@ import {
   exportInvoicesXlsx,
 } from "@/services/export-service";
 import {
+  getWhatsAppConfig,
+  testWhatsAppCloudConnection,
+} from "@/services/whatsapp-cloud-service";
+import {
   KeyRound,
   Stethoscope,
   Download,
@@ -34,6 +38,9 @@ import {
   Shield,
   QrCode,
   Phone,
+  MessageCircle,
+  Tablet,
+  Loader2,
 } from "lucide-react";
 
 export function AdminScreen() {
@@ -48,31 +55,81 @@ export function AdminScreen() {
   const [newTreatment, setNewTreatment] = useState({ name: "", fee: "", capacity: "2" });
   const [exportRange, setExportRange] = useState({ from: "", to: "" });
   const [paymentQrUri, setPaymentQrUri] = useState(settings?.paymentQrUri ?? "");
+  const [waConfig, setWaConfig] = useState({
+    enabled: settings?.whatsappEnabled ?? false,
+    phoneNumberId: settings?.whatsappPhoneNumberId ?? "",
+    accessToken: settings?.whatsappAccessToken ?? "",
+    apiVersion: settings?.whatsappApiVersion ?? "v21.0",
+    templateName: settings?.whatsappUtilityTemplateName ?? "",
+    templateLanguage: settings?.whatsappUtilityTemplateLanguage ?? "en",
+  });
+  const [kioskMode, setKioskMode] = useState(settings?.kioskModeEnabled ?? false);
+  const [testingWa, setTestingWa] = useState(false);
+
+  useEffect(() => {
+    if (!settings) return;
+    setPaymentQrUri(settings.paymentQrUri ?? "");
+    setWaConfig({
+      enabled: settings.whatsappEnabled ?? false,
+      phoneNumberId: settings.whatsappPhoneNumberId ?? "",
+      accessToken: settings.whatsappAccessToken ?? "",
+      apiVersion: settings.whatsappApiVersion ?? "v21.0",
+      templateName: settings.whatsappUtilityTemplateName ?? "",
+      templateLanguage: settings.whatsappUtilityTemplateLanguage ?? "en",
+    });
+    setKioskMode(settings.kioskModeEnabled ?? false);
+  }, [settings]);
+
+  async function saveWhatsAppConfig() {
+    if (!settings) return;
+    try {
+      await db.clinicSettings.update(settings.id, {
+        whatsappEnabled: waConfig.enabled,
+        whatsappPhoneNumberId: waConfig.phoneNumberId.trim() || undefined,
+        whatsappAccessToken: waConfig.accessToken.trim() || undefined,
+        whatsappApiVersion: waConfig.apiVersion.trim() || undefined,
+        whatsappUtilityTemplateName: waConfig.templateName.trim() || undefined,
+        whatsappUtilityTemplateLanguage: waConfig.templateLanguage.trim() || undefined,
+      });
+      await reloadSettings();
+      toast.success("WhatsApp API settings saved");
+    } catch {
+      toast.error("Failed to save WhatsApp settings");
+    }
+  }
 
   return (
     <AppShell {...shell}>
       <div className="screen-pad flex flex-col gap-4">
         <Tabs defaultValue="security">
-          <TabsList className="grid grid-cols-5 w-full">
-            <TabsTrigger value="security" className="gap-1 text-xs">
+          <TabsList className="grid grid-cols-3 landscape:grid-cols-7 w-full gap-1 h-auto">
+            <TabsTrigger value="security" className="gap-1 text-xs py-2">
               <Shield className="size-3.5" />
               Security
             </TabsTrigger>
-            <TabsTrigger value="doctors" className="gap-1 text-xs">
+            <TabsTrigger value="doctors" className="gap-1 text-xs py-2">
               <Stethoscope className="size-3.5" />
               Doctors
             </TabsTrigger>
-            <TabsTrigger value="treatments" className="gap-1 text-xs">
+            <TabsTrigger value="treatments" className="gap-1 text-xs py-2">
               <Leaf className="size-3.5" />
               Treatments
             </TabsTrigger>
-            <TabsTrigger value="export" className="gap-1 text-xs">
+            <TabsTrigger value="export" className="gap-1 text-xs py-2">
               <Download className="size-3.5" />
               Export
             </TabsTrigger>
-            <TabsTrigger value="clinic" className="gap-1 text-xs">
+            <TabsTrigger value="clinic" className="gap-1 text-xs py-2">
               <QrCode className="size-3.5" />
               Clinic
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp" className="gap-1 text-xs py-2">
+              <MessageCircle className="size-3.5" />
+              WhatsApp
+            </TabsTrigger>
+            <TabsTrigger value="device" className="gap-1 text-xs py-2">
+              <Tablet className="size-3.5" />
+              Device
             </TabsTrigger>
           </TabsList>
 
@@ -423,6 +480,187 @@ export function AdminScreen() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* ── WhatsApp Cloud API ───────────────────────────────────────── */}
+          <TabsContent value="whatsapp" className="mt-4">
+            <div className="flex flex-col gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <MessageCircle className="size-4 text-ayura-green" />
+                    WhatsApp Business API
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Invoices send silently in the background — no WhatsApp app opens.
+                    Get credentials from Meta Business Suite → WhatsApp → API Setup.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3 pt-0">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={waConfig.enabled}
+                      onChange={(e) =>
+                        setWaConfig({ ...waConfig, enabled: e.target.checked })
+                      }
+                      className="size-4 rounded border-border"
+                    />
+                    Enable WhatsApp invoice sending
+                  </label>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Phone Number ID</Label>
+                    <Input
+                      placeholder="From Meta API Setup"
+                      value={waConfig.phoneNumberId}
+                      onChange={(e) =>
+                        setWaConfig({ ...waConfig, phoneNumberId: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Permanent Access Token</Label>
+                    <Input
+                      type="password"
+                      placeholder="Starts with EAA…"
+                      value={waConfig.accessToken}
+                      onChange={(e) =>
+                        setWaConfig({ ...waConfig, accessToken: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs">API Version</Label>
+                      <Input
+                        value={waConfig.apiVersion}
+                        onChange={(e) =>
+                          setWaConfig({ ...waConfig, apiVersion: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs">Template language</Label>
+                      <Input
+                        placeholder="en"
+                        value={waConfig.templateLanguage}
+                        onChange={(e) =>
+                          setWaConfig({ ...waConfig, templateLanguage: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs">Utility template name (recommended)</Label>
+                    <Input
+                      placeholder="e.g. invoice_ready"
+                      value={waConfig.templateName}
+                      onChange={(e) =>
+                        setWaConfig({ ...waConfig, templateName: e.target.value })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Create in Meta with 4 body variables: patient name, invoice ID, total,
+                      clinic name. Required for first-time outbound messages (~₹0.12/msg).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      className="gradient-ayura text-white border-0 h-9"
+                      onClick={() => void saveWhatsAppConfig()}
+                    >
+                      Save WhatsApp settings
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={testingWa}
+                      onClick={async () => {
+                        const config = getWhatsAppConfig({
+                          ...settings!,
+                          whatsappEnabled: waConfig.enabled,
+                          whatsappPhoneNumberId: waConfig.phoneNumberId,
+                          whatsappAccessToken: waConfig.accessToken,
+                          whatsappApiVersion: waConfig.apiVersion,
+                        });
+                        if (!config) {
+                          toast.error("Fill in Phone Number ID and Access Token first");
+                          return;
+                        }
+                        setTestingWa(true);
+                        const result = await testWhatsAppCloudConnection(config);
+                        setTestingWa(false);
+                        if (result.ok) {
+                          toast.success(
+                            `Connected${result.displayPhone ? `: ${result.displayPhone}` : ""}`,
+                          );
+                        } else {
+                          toast.error(result.error ?? "Connection failed");
+                        }
+                      }}
+                    >
+                      {testingWa ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        "Test connection"
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ── Device / Kiosk ───────────────────────────────────────────── */}
+          <TabsContent value="device" className="mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Tablet className="size-4 text-ayura-green" />
+                  Tablet & Kiosk Mode
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Soft kiosk blocks the back button from exiting the app. Full lockdown
+                  (boot straight into app, no settings) requires one-time Device Owner setup —
+                  see docs/DEPLOYMENT.md in the project folder.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 pt-0">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={kioskMode}
+                    onChange={(e) => setKioskMode(e.target.checked)}
+                    className="size-4 rounded border-border"
+                  />
+                  Enable soft kiosk mode (block back-button exit)
+                </label>
+                <Button
+                  size="sm"
+                  className="gradient-ayura text-white border-0 h-9 self-start"
+                  onClick={async () => {
+                    if (!settings) return;
+                    try {
+                      await db.clinicSettings.update(settings.id, {
+                        kioskModeEnabled: kioskMode,
+                      });
+                      await reloadSettings();
+                      toast.success("Device settings saved");
+                    } catch {
+                      toast.error("Failed to save");
+                    }
+                  }}
+                >
+                  Save device settings
+                </Button>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

@@ -23,9 +23,8 @@ import { useAppShell } from "@/hooks/use-app-shell";
 import { useSessionStore } from "@/stores/session-store";
 import { saveInvoice } from "@/services/invoice-repository";
 import { generateInvoicePdf, downloadPdfBlobUrl } from "@/services/pdf-generator";
-import { sendInvoiceWhatsApp } from "@/services/whatsapp-bridge";
-import { sendWaInvoice } from "@/services/whatsapp-api";
-import { useWhatsAppStore } from "@/stores/whatsapp-store";
+import { sendInvoiceViaWhatsAppCloud } from "@/services/whatsapp-cloud-service";
+import { useClinicStore } from "@/stores/clinic-store";
 import { useSyncStore } from "@/stores/sync-store";
 import type { BillItemInput, BillItemType, InvoiceDraft } from "@/types/billing";
 import {
@@ -207,35 +206,34 @@ export function InvoiceScreen() {
     }
   }
 
-  const waStatus = useWhatsAppStore((s) => s.status);
+  const clinicSettings = useClinicStore((s) => s.settings);
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
   async function handleWhatsApp() {
     if (!patientPhone.trim()) {
       toast.error("Patient phone required for WhatsApp");
       return;
     }
+    setSendingWhatsApp(true);
     try {
       const draft = await buildDraft();
       const pdfBlobUrl = lastPdfUrl ?? (await generateInvoicePdf(draft));
-
-      // Use the bridge (sends PDF document) when connected; fall back to wa.me link
-      if (waStatus === "connected") {
-        // Fetch the blob and convert to Blob object for the API
-        const response = await fetch(pdfBlobUrl);
-        const pdfBlob = await response.blob();
-        const filename = `invoice-${draft.invoiceId}.pdf`;
-        const text = `Dear ${draft.patientName}, please find your invoice attached. Total: ₹${draft.totals.grandTotal.toFixed(2)}. Thank you — ${(await import("@/stores/clinic-store")).useClinicStore.getState().settings?.clinicName ?? "Clinic"}`;
-        const result = await sendWaInvoice(patientPhone, text, pdfBlob, filename);
-        if (result.ok) toast.success("Invoice sent via WhatsApp!");
-        else toast.error(result.error ?? "WhatsApp send failed");
-      } else {
-        // Fallback: open wa.me link with text summary
-        const result = await sendInvoiceWhatsApp(patientPhone, patientName, pdfBlobUrl, draft);
-        if (result.ok) toast.success(result.message);
-        else toast.error(result.message);
-      }
+      const response = await fetch(pdfBlobUrl);
+      const pdfBlob = await response.blob();
+      const result = await sendInvoiceViaWhatsAppCloud(
+        patientPhone,
+        patientName,
+        draft,
+        pdfBlob,
+        clinicSettings?.clinicName ?? "Clinic",
+        clinicSettings,
+      );
+      if (result.ok) toast.success("Invoice sent to patient on WhatsApp");
+      else toast.error(result.error ?? "WhatsApp send failed");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "WhatsApp failed");
+    } finally {
+      setSendingWhatsApp(false);
     }
   }
 
@@ -517,11 +515,11 @@ export function InvoiceScreen() {
                 <Button
                   variant="outline"
                   className="w-full h-9 gap-2 text-sm"
-                  disabled={!patientPhone || items.length === 0}
+                  disabled={!patientPhone || items.length === 0 || sendingWhatsApp}
                   onClick={() => void handleWhatsApp()}
                 >
                   <Share2 className="size-4" />
-                  Send via WhatsApp
+                  {sendingWhatsApp ? "Sending…" : "Send via WhatsApp"}
                 </Button>
                 <Button
                   variant="ghost"

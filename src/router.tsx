@@ -15,7 +15,6 @@ import { DoctorPortalScreen } from "@/screens/doctor-portal/DoctorPortalScreen";
 import { InsightsScreen } from "@/screens/insights/InsightsScreen";
 import { AllInvoicesScreen } from "@/screens/all-invoices/AllInvoicesScreen";
 import { AdminScreen } from "@/screens/admin/AdminScreen";
-import { MessagingScreen } from "@/screens/messaging/MessagingScreen";
 
 export const router = createBrowserRouter([
   { path: "/", element: <RootRedirect /> },
@@ -38,7 +37,6 @@ export const router = createBrowserRouter([
       { path: "/estimation", element: <EstimationScreen /> },
       { path: "/stock", element: <StockScreen /> },
       { path: "/booking", element: <BookingScreen /> },
-      { path: "/messaging", element: <MessagingScreen /> },
     ],
   },
 

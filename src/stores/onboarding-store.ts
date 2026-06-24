@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { DEFAULT_CLINIC_LOGO } from "@/lib/brand";
 import type { OnboardingDraft } from "@/types/billing";
 
 const INITIAL_DRAFT: OnboardingDraft = {
   clinicName: "ayurA Wellness Centre",
   address: "18th Main Road, Anna Nagar, Chennai",
   phone: "+91 9876543210",
+  logoUri: DEFAULT_CLINIC_LOGO,
   deviceKey: "",
   adminPassword: "",
   frontDeskPin: "",

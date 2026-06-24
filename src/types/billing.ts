@@ -75,6 +75,15 @@ export interface ClinicSettings {
   adminPasswordHash: string;
   frontDeskPinHash: string;
   onboardingComplete: boolean;
+  /** WhatsApp Business Cloud API (Meta) */
+  whatsappEnabled?: boolean;
+  whatsappPhoneNumberId?: string;
+  whatsappAccessToken?: string;
+  whatsappApiVersion?: string;
+  whatsappUtilityTemplateName?: string;
+  whatsappUtilityTemplateLanguage?: string;
+  /** Lock down tablet: block back-button exit (native kiosk needs Device Owner — see docs/DEPLOYMENT.md) */
+  kioskModeEnabled?: boolean;
 }
 
 export interface Medicine {

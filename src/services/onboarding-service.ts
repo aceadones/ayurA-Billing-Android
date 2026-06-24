@@ -1,4 +1,5 @@
 import { db } from "@/db/database";
+import { DEFAULT_CLINIC_LOGO } from "@/lib/brand";
 import { hashSecret } from "@/services/password-hasher";
 import type { ClinicSettings, OnboardingDraft } from "@/types/billing";
 import { newId } from "@/lib/id";
@@ -43,7 +44,7 @@ export async function completeOnboarding(draft: OnboardingDraft): Promise<Clinic
         clinicName: draft.clinicName,
         address: draft.address,
         phone: draft.phone,
-        logoUri: draft.logoUri || undefined,
+        logoUri: draft.logoUri?.trim() || DEFAULT_CLINIC_LOGO,
         slotDurationMinutes: parseInt(draft.slotDuration, 10) || 30,
         stockThresholdDefault: parseInt(draft.stockThreshold, 10) || 10,
         expiryAlertDays: parseInt(draft.expiryWindow, 10) || 30,

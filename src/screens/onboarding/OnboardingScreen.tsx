@@ -237,25 +237,23 @@ export function OnboardingScreen() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="logoUri">Clinic logo URL (optional)</Label>
+                  <Label htmlFor="logoUri">Clinic logo (optional override)</Label>
                   <Input
                     id="logoUri"
                     type="url"
-                    placeholder="https://your-clinic.com/logo.png"
+                    placeholder="Leave blank to use ayurA Chennai logo"
                     value={draft.logoUri ?? ""}
                     onChange={(e) => update("logoUri", e.target.value)}
                   />
                 </div>
-                {(draft.logoUri || draft.clinicName) && (
-                  <div className="flex justify-center pt-2">
-                    <ClinicLogo
-                      clinicName={draft.clinicName || "Your Clinic"}
-                      logoUri={draft.logoUri}
-                      size="md"
-                      layout="stacked"
-                    />
-                  </div>
-                )}
+                <div className="flex justify-center pt-2">
+                  <ClinicLogo
+                    clinicName={draft.clinicName || "Your Clinic"}
+                    logoUri={draft.logoUri}
+                    size="md"
+                    layout="stacked"
+                  />
+                </div>
               </div>
             </div>
           )}
