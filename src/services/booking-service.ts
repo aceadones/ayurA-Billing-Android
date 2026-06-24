@@ -3,12 +3,13 @@ import { newId } from "@/lib/id";
 import type { Doctor, Treatment } from "@/types/billing";
 import { hashSecret } from "@/services/password-hasher";
 
-export async function addDoctor(name: string, pin: string, specialization?: string): Promise<void> {
+export async function addDoctor(name: string, pin: string, specialization?: string, phone?: string): Promise<void> {
   await db.doctors.put({
     id: newId("doc"),
     name,
     pinHash: await hashSecret(pin),
     specialization,
+    phone: phone?.trim() || undefined,
     active: true,
   });
 }

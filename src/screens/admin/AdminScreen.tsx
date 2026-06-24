@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { db } from "@/db/database";
 import { useAppShell } from "@/hooks/use-app-shell";
+import { useClinicStore } from "@/stores/clinic-store";
 import {
   updateAdminPassword,
   updateFrontDeskPin,
@@ -31,24 +32,28 @@ import {
   ChevronRight,
   Leaf,
   Shield,
+  QrCode,
+  Phone,
 } from "lucide-react";
 
 export function AdminScreen() {
   const shell = useAppShell("Admin", "Clinic administration");
   const doctors = useLiveQuery(() => db.doctors.filter((d) => d.active).toArray(), []);
   const treatments = useLiveQuery(() => db.treatments.filter((t) => t.active).toArray(), []);
+  const { settings, load: reloadSettings } = useClinicStore();
 
   const [frontDesk, setFrontDesk] = useState({ current: "", next: "" });
   const [adminPass, setAdminPass] = useState({ current: "", next: "" });
-  const [newDoctor, setNewDoctor] = useState({ name: "", pin: "", specialization: "" });
+  const [newDoctor, setNewDoctor] = useState({ name: "", pin: "", specialization: "", phone: "" });
   const [newTreatment, setNewTreatment] = useState({ name: "", fee: "", capacity: "2" });
   const [exportRange, setExportRange] = useState({ from: "", to: "" });
+  const [paymentQrUri, setPaymentQrUri] = useState(settings?.paymentQrUri ?? "");
 
   return (
     <AppShell {...shell}>
       <div className="screen-pad flex flex-col gap-4">
         <Tabs defaultValue="security">
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="security" className="gap-1 text-xs">
               <Shield className="size-3.5" />
               Security
@@ -64,6 +69,10 @@ export function AdminScreen() {
             <TabsTrigger value="export" className="gap-1 text-xs">
               <Download className="size-3.5" />
               Export
+            </TabsTrigger>
+            <TabsTrigger value="clinic" className="gap-1 text-xs">
+              <QrCode className="size-3.5" />
+              Clinic
             </TabsTrigger>
           </TabsList>
 
@@ -169,14 +178,20 @@ export function AdminScreen() {
                       setNewDoctor({ ...newDoctor, specialization: e.target.value })
                     }
                   />
+                  <Input
+                    placeholder="Phone (for Call Doctor FAB)"
+                    type="tel"
+                    value={newDoctor.phone}
+                    onChange={(e) => setNewDoctor({ ...newDoctor, phone: e.target.value })}
+                  />
                   <Button
                     size="sm"
                     className="gradient-ayura text-white border-0 h-8 gap-1.5 self-start"
                     onClick={async () => {
                       try {
-                        await addDoctor(newDoctor.name, newDoctor.pin, newDoctor.specialization);
+                        await addDoctor(newDoctor.name, newDoctor.pin, newDoctor.specialization, newDoctor.phone);
                         toast.success("Doctor added");
-                        setNewDoctor({ name: "", pin: "", specialization: "" });
+                        setNewDoctor({ name: "", pin: "", specialization: "", phone: "" });
                       } catch (error) {
                         toast.error(error instanceof Error ? error.message : "Failed");
                       }
@@ -194,9 +209,15 @@ export function AdminScreen() {
                     <div className="p-2.5 bg-ayura-green-light rounded-xl shrink-0">
                       <Stethoscope className="size-4 text-ayura-green" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{d.name}</p>
                       <p className="text-xs text-muted-foreground">{d.specialization}</p>
+                      {(d as { phone?: string }).phone && (
+                        <p className="text-xs text-ayura-primary font-mono flex items-center gap-1 mt-0.5">
+                          <Phone className="size-3" />
+                          {(d as { phone?: string }).phone}
+                        </p>
+                      )}
                     </div>
                     <ChevronRight className="size-4 text-muted-foreground" />
                   </CardContent>
@@ -348,6 +369,60 @@ export function AdminScreen() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── Clinic settings tab ──────────────────────────────────────── */}
+          <TabsContent value="clinic" className="mt-4">
+            <div className="flex flex-col gap-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <QrCode className="size-4 text-ayura-green" />
+                    Payment QR Code
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Paste a UPI QR image URL (Google Pay, PhonePe, etc.) to show in the Payment QR FAB.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3 pt-0">
+                  <Input
+                    placeholder="https://… or data:image/png;base64,…"
+                    value={paymentQrUri}
+                    onChange={(e) => setPaymentQrUri(e.target.value)}
+                  />
+                  {paymentQrUri && (
+                    <div className="rounded-xl border border-border overflow-hidden w-fit">
+                      <img
+                        src={paymentQrUri}
+                        alt="Payment QR preview"
+                        className="size-32 object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+                  )}
+                  <Button
+                    size="sm"
+                    className="gradient-ayura text-white border-0 h-9 self-start"
+                    onClick={async () => {
+                      try {
+                        if (!settings) return;
+                        await db.clinicSettings.update(settings.id, {
+                          paymentQrUri: paymentQrUri.trim() || undefined,
+                        });
+                        await reloadSettings();
+                        toast.success("Payment QR saved");
+                      } catch {
+                        toast.error("Failed to save QR");
+                      }
+                    }}
+                  >
+                    Save QR
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

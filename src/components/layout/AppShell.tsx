@@ -5,6 +5,7 @@ import { TopBar } from "./TopBar";
 import type { AppRole } from "@/components/ayura/RoleBadge";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FloatingActions } from "@/components/ayura/FloatingActions";
 
 interface AppShellProps {
   title: string;
@@ -104,6 +105,9 @@ export function AppShell({
           {children}
         </main>
       </div>
+
+      {/* Global floating actions (FAB) */}
+      <FloatingActions />
     </div>
   );
 }

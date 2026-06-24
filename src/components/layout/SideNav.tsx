@@ -15,6 +15,7 @@ import {
   ListOrdered,
   Settings,
   LogOut,
+  MessageCircle,
 } from "lucide-react";
 
 export interface NavItem {
@@ -33,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/doctor-portal", icon: Stethoscope, label: "Doctor", roleRequired: "doctor" },
   { to: "/insights", icon: BarChart2, label: "Insights" },
   { to: "/all-invoices", icon: ListOrdered, label: "Invoices" },
+  { to: "/messaging", icon: MessageCircle, label: "Messaging" },
   { to: "/admin", icon: Settings, label: "Admin", roleRequired: "admin" },
 ];
 

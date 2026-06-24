@@ -66,6 +66,7 @@ export interface ClinicSettings {
   address: string;
   phone: string;
   logoUri?: string;
+  paymentQrUri?: string;
   slotDurationMinutes: number;
   stockThresholdDefault: number;
   expiryAlertDays: number;
@@ -101,6 +102,7 @@ export interface Doctor {
   name: string;
   pinHash: string;
   specialization?: string;
+  phone?: string;
   active: boolean;
 }
 
