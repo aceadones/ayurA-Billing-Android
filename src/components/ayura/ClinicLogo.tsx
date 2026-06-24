@@ -35,8 +35,8 @@ export function ClinicLogo({
     <img
       src={imageSrc}
       alt={clinicName}
-      className="rounded-full object-contain shrink-0"
-      style={{ width: s.image, height: s.image }}
+      className="shrink-0 object-contain"
+      style={{ maxHeight: s.image, width: "auto", height: "auto" }}
     />
   );
 
