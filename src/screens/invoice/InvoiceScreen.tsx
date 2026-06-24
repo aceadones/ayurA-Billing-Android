@@ -1,13 +1,31 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { db } from "@/db/database";
+import { calculateTotals } from "@/lib/totals-calculator";
+import { newId, newInvoiceId } from "@/lib/id";
 import { cn, formatCurrency } from "@/lib/utils";
+import { useAppShell } from "@/hooks/use-app-shell";
+import { useSessionStore } from "@/stores/session-store";
+import { saveInvoice } from "@/services/invoice-repository";
+import { generateInvoicePdf, downloadPdfBlobUrl } from "@/services/pdf-generator";
+import { sendInvoiceWhatsApp } from "@/services/whatsapp-bridge";
+import { useSyncStore } from "@/stores/sync-store";
+import type { BillItemInput, BillItemType, InvoiceDraft } from "@/types/billing";
 import {
   UserRound,
   Plus,
@@ -22,54 +40,103 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-type LineItemType = "medicine" | "treatment" | "consultation";
-
-interface LineItem {
-  id: string;
-  type: LineItemType;
-  name: string;
-  qty: number;
-  unitPrice: number;
-  discount: number;
-}
-
-const TAX_RATE = 0.05;
-
-function calcTotals(items: LineItem[], paid: number) {
-  const subtotal = items.reduce((s, i) => s + i.qty * i.unitPrice * (1 - i.discount / 100), 0);
-  const tax = subtotal * TAX_RATE;
-  const grandTotal = subtotal + tax;
-  const balance = grandTotal - paid;
-  return { subtotal, tax, grandTotal, balance };
-}
-
-const TYPE_CONFIG: Record<LineItemType, { icon: typeof Pill; label: string; color: string }> = {
-  medicine: { icon: Pill, label: "Medicine", color: "bg-sky-50 text-sky-700 border-sky-200" },
-  treatment: { icon: Stethoscope, label: "Treatment", color: "bg-ayura-green-light text-ayura-green border-green-200" },
-  consultation: { icon: MessageCircle, label: "Consultation", color: "bg-ayura-gold-light text-amber-700 border-amber-200" },
+const TYPE_CONFIG: Record<
+  BillItemType,
+  { icon: typeof Pill; label: string; color: string }
+> = {
+  MEDICINE: {
+    icon: Pill,
+    label: "Medicine",
+    color: "bg-sky-50 text-sky-700 border-sky-200",
+  },
+  TREATMENT: {
+    icon: Stethoscope,
+    label: "Treatment",
+    color: "bg-ayura-green-light text-ayura-green border-green-200",
+  },
+  CONSULTATION: {
+    icon: MessageCircle,
+    label: "Consultation",
+    color: "bg-ayura-gold-light text-amber-700 border-amber-200",
+  },
 };
 
 export function InvoiceScreen() {
+  const shell = useAppShell("New Invoice");
+  const refreshSync = useSyncStore((s) => s.refresh);
+  const pharmacistId = useSessionStore((s) => s.activePharmacistId) ?? "default";
+
+  const medicines = useLiveQuery(() => db.medicines.toArray(), []);
+  const treatments = useLiveQuery(() => db.treatments.filter((t) => t.active).toArray(), []);
+
   const [patientName, setPatientName] = useState("");
   const [patientPhone, setPatientPhone] = useState("");
-  const [items, setItems] = useState<LineItem[]>([]);
+  const [items, setItems] = useState<BillItemInput[]>([]);
   const [paid, setPaid] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [lastPdfUrl, setLastPdfUrl] = useState<string | null>(null);
 
-  const totals = calcTotals(items, paid);
-  const hasConsultation = items.some((i) => i.type === "consultation");
+  const totals = useMemo(() => {
+    try {
+      return calculateTotals(items, paid);
+    } catch {
+      return calculateTotals([], paid);
+    }
+  }, [items, paid]);
 
-  function addItem(type: LineItemType) {
-    if (type === "consultation" && hasConsultation) return;
-    const id = Math.random().toString(36).slice(2);
-    const defaults: Record<LineItemType, Partial<LineItem>> = {
-      medicine: { name: "Medicine", qty: 1, unitPrice: 50 },
-      treatment: { name: "Treatment", qty: 1, unitPrice: 500 },
-      consultation: { name: "Consultation", qty: 1, unitPrice: 300 },
-    };
-    setItems((prev) => [...prev, { id, type, discount: 0, ...defaults[type] } as LineItem]);
+  const hasConsultation = items.some((i) => i.type === "CONSULTATION");
+
+  function addMedicine(medicineId: string) {
+    const med = medicines?.find((m) => m.id === medicineId);
+    if (!med) return;
+    setItems((prev) => [
+      ...prev,
+      {
+        id: med.id,
+        type: "MEDICINE",
+        title: med.name,
+        qty: 1,
+        unitPrice: med.unitPrice,
+        taxPercent: med.taxPercent,
+        discount: 0,
+      },
+    ]);
   }
 
-  function updateItem(id: string, key: keyof LineItem, value: string | number) {
+  function addTreatment(treatmentId: string) {
+    const treatment = treatments?.find((t) => t.id === treatmentId);
+    if (!treatment) return;
+    setItems((prev) => [
+      ...prev,
+      {
+        id: treatment.id,
+        type: "TREATMENT",
+        title: treatment.name,
+        qty: 1,
+        unitPrice: treatment.fee,
+        taxPercent: 5,
+        discount: 0,
+      },
+    ]);
+  }
+
+  function addConsultation() {
+    if (hasConsultation) return;
+    setItems((prev) => [
+      ...prev,
+      {
+        id: newId("cons"),
+        type: "CONSULTATION",
+        title: "Consultation",
+        qty: 1,
+        unitPrice: 500,
+        taxPercent: 5,
+        discount: 0,
+      },
+    ]);
+  }
+
+  function updateItem(id: string, key: keyof BillItemInput, value: string | number) {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [key]: value } : i)));
   }
 
@@ -77,12 +144,92 @@ export function InvoiceScreen() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  function resetForm() {
+    setPatientName("");
+    setPatientPhone("");
+    setItems([]);
+    setPaid(0);
+    setLastPdfUrl(null);
+  }
+
+  async function buildDraft(): Promise<InvoiceDraft> {
+    return {
+      invoiceId: newInvoiceId(),
+      patientName: patientName.trim(),
+      patientPhone: patientPhone.trim() || undefined,
+      pharmacistId,
+      items,
+      payments:
+        paid > 0
+          ? [{ method: "CASH", amount: paid }]
+          : [],
+      totals,
+      createdAt: Date.now(),
+    };
+  }
+
+  async function handleSave() {
+    if (!patientName.trim() || items.length === 0) return;
+    setSaving(true);
+    try {
+      const draft = await buildDraft();
+      await saveInvoice(draft);
+      const pdfUrl = await generateInvoicePdf(draft);
+      setLastPdfUrl(pdfUrl);
+      await refreshSync();
+      toast.success(`Invoice ${draft.invoiceId} saved`);
+      resetForm();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save invoice");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveAndPdf() {
+    if (!patientName.trim() || items.length === 0) return;
+    setSaving(true);
+    try {
+      const draft = await buildDraft();
+      await saveInvoice(draft);
+      const pdfUrl = await generateInvoicePdf(draft);
+      setLastPdfUrl(pdfUrl);
+      downloadPdfBlobUrl(pdfUrl, `invoice_${draft.patientName.replace(/\s+/g, "_")}.pdf`);
+      await refreshSync();
+      toast.success(`Invoice ${draft.invoiceId} saved & PDF downloaded`);
+      resetForm();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save invoice");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleWhatsApp() {
+    if (!patientPhone.trim()) {
+      toast.error("Patient phone required for WhatsApp");
+      return;
+    }
+    try {
+      const draft = await buildDraft();
+      const pdfUrl = lastPdfUrl ?? (await generateInvoicePdf(draft));
+      const result = await sendInvoiceWhatsApp(
+        patientPhone,
+        patientName,
+        pdfUrl,
+        draft,
+      );
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "WhatsApp failed");
+    }
+  }
+
   return (
-    <AppShell title="New Invoice" currentRole="front-desk" onLock={() => {}}>
+    <AppShell {...shell}>
       <div className="screen-pad grid landscape:grid-cols-[1fr_320px] gap-5 h-full">
-        {/* ── Left: Patient + Line Items ── */}
         <div className="flex flex-col gap-4 min-w-0">
-          {/* Patient info */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -92,7 +239,9 @@ export function InvoiceScreen() {
             </CardHeader>
             <CardContent className="flex gap-3 pt-0">
               <div className="flex-1">
-                <Label htmlFor="pname" className="text-xs">Name</Label>
+                <Label htmlFor="pname" className="text-xs">
+                  Name
+                </Label>
                 <Input
                   id="pname"
                   placeholder="Patient name"
@@ -102,7 +251,9 @@ export function InvoiceScreen() {
                 />
               </div>
               <div className="w-36">
-                <Label htmlFor="pphone" className="text-xs">Phone</Label>
+                <Label htmlFor="pphone" className="text-xs">
+                  Phone
+                </Label>
                 <Input
                   id="pphone"
                   type="tel"
@@ -115,30 +266,46 @@ export function InvoiceScreen() {
             </CardContent>
           </Card>
 
-          {/* Add item buttons */}
-          <div className="flex gap-2">
-            {(["medicine", "treatment", "consultation"] as LineItemType[]).map((type) => {
-              const cfg = TYPE_CONFIG[type];
-              const Icon = cfg.icon;
-              const disabled = type === "consultation" && hasConsultation;
-              return (
-                <Button
-                  key={type}
-                  variant="outline"
-                  size="sm"
-                  disabled={disabled}
-                  onClick={() => addItem(type)}
-                  className={cn("gap-1.5 text-xs h-8", !disabled && "hover:bg-muted")}
-                >
-                  <Plus className="size-3.5" />
-                  <Icon className="size-3.5" />
-                  {cfg.label}
-                </Button>
-              );
-            })}
+          <div className="flex flex-wrap gap-2">
+            <Select onValueChange={addMedicine}>
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue placeholder="Add medicine" />
+              </SelectTrigger>
+              <SelectContent>
+                {(medicines ?? []).map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name} ({m.stockQty})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select onValueChange={addTreatment}>
+              <SelectTrigger className="h-8 w-[150px] text-xs">
+                <SelectValue placeholder="Add treatment" />
+              </SelectTrigger>
+              <SelectContent>
+                {(treatments ?? []).map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={hasConsultation}
+              onClick={addConsultation}
+              className="gap-1.5 text-xs h-8"
+            >
+              <Plus className="size-3.5" />
+              <MessageCircle className="size-3.5" />
+              Consultation
+            </Button>
           </div>
 
-          {/* Line items */}
           <ScrollArea className="flex-1 max-h-[360px] landscape:max-h-[460px]">
             <div className="flex flex-col gap-2 pr-1">
               {items.length === 0 && (
@@ -155,11 +322,21 @@ export function InvoiceScreen() {
               {items.map((item) => {
                 const cfg = TYPE_CONFIG[item.type];
                 const Icon = cfg.icon;
-                const lineTotal = item.qty * item.unitPrice * (1 - item.discount / 100);
+                const discount = item.discount ?? 0;
+                const lineTotal = item.qty * item.unitPrice - discount;
 
                 return (
                   <Card key={item.id} className="overflow-hidden">
-                    <div className={cn("h-1", item.type === "medicine" ? "bg-sky-400" : item.type === "treatment" ? "bg-ayura-green" : "bg-ayura-gold")} />
+                    <div
+                      className={cn(
+                        "h-1",
+                        item.type === "MEDICINE"
+                          ? "bg-sky-400"
+                          : item.type === "TREATMENT"
+                            ? "bg-ayura-green"
+                            : "bg-ayura-gold",
+                      )}
+                    />
                     <CardContent className="pt-3 pb-3">
                       <div className="flex items-start gap-3">
                         <div className={cn("p-1.5 rounded-lg shrink-0 border", cfg.color)}>
@@ -168,9 +345,8 @@ export function InvoiceScreen() {
                         <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
                           <div className="col-span-2">
                             <Input
-                              placeholder="Item name"
-                              value={item.name}
-                              onChange={(e) => updateItem(item.id, "name", e.target.value)}
+                              value={item.title}
+                              onChange={(e) => updateItem(item.id, "title", e.target.value)}
                               className="h-8 text-sm"
                             />
                           </div>
@@ -180,7 +356,9 @@ export function InvoiceScreen() {
                               type="number"
                               min="1"
                               value={item.qty}
-                              onChange={(e) => updateItem(item.id, "qty", Number(e.target.value))}
+                              onChange={(e) =>
+                                updateItem(item.id, "qty", Number(e.target.value))
+                              }
                               className="h-8 text-sm mt-0.5"
                             />
                           </div>
@@ -190,23 +368,30 @@ export function InvoiceScreen() {
                               type="number"
                               min="0"
                               value={item.unitPrice}
-                              onChange={(e) => updateItem(item.id, "unitPrice", Number(e.target.value))}
+                              onChange={(e) =>
+                                updateItem(item.id, "unitPrice", Number(e.target.value))
+                              }
                               className="h-8 text-sm mt-0.5"
                             />
                           </div>
                           <div>
-                            <Label className="text-[10px] text-muted-foreground">Discount (%)</Label>
+                            <Label className="text-[10px] text-muted-foreground">
+                              Discount (₹)
+                            </Label>
                             <Input
                               type="number"
                               min="0"
-                              max="100"
-                              value={item.discount}
-                              onChange={(e) => updateItem(item.id, "discount", Number(e.target.value))}
+                              value={discount}
+                              onChange={(e) =>
+                                updateItem(item.id, "discount", Number(e.target.value))
+                              }
                               className="h-8 text-sm mt-0.5"
                             />
                           </div>
                           <div className="flex items-end">
-                            <span className="text-sm font-semibold">{formatCurrency(lineTotal)}</span>
+                            <span className="text-sm font-semibold">
+                              {formatCurrency(lineTotal)}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -225,7 +410,6 @@ export function InvoiceScreen() {
           </ScrollArea>
         </div>
 
-        {/* ── Right: Totals + Actions ── */}
         <div className="flex flex-col gap-4">
           <Card className="sticky top-4">
             <CardHeader className="pb-3">
@@ -235,30 +419,35 @@ export function InvoiceScreen() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3 pt-0">
-              {/* Totals */}
               <div className="flex flex-col gap-2 text-sm">
-                {[
-                  ["Subtotal", totals.subtotal],
-                  ["GST (5%)", totals.tax],
-                ].map(([label, val]) => (
-                  <div key={label as string} className="flex justify-between text-muted-foreground">
-                    <span>{label}</span>
-                    <span>{formatCurrency(val as number)}</span>
-                  </div>
-                ))}
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(totals.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Discount</span>
+                  <span>{formatCurrency(totals.discountTotal)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Tax</span>
+                  <span>{formatCurrency(totals.taxTotal)}</span>
+                </div>
 
                 <Separator />
 
                 <div className="flex justify-between font-semibold text-base">
                   <span>Grand Total</span>
-                  <span className="text-ayura-green">{formatCurrency(totals.grandTotal)}</span>
+                  <span className="text-ayura-green">
+                    {formatCurrency(totals.grandTotal)}
+                  </span>
                 </div>
 
                 <Separator />
 
-                {/* Paid amount */}
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="paid" className="text-xs">Amount Paid (₹)</Label>
+                  <Label htmlFor="paid" className="text-xs">
+                    Amount Paid (₹)
+                  </Label>
                   <Input
                     id="paid"
                     type="number"
@@ -279,18 +468,23 @@ export function InvoiceScreen() {
                   </Button>
                 </div>
 
-                <div className={cn(
-                  "flex justify-between font-semibold text-sm px-3 py-2 rounded-lg",
-                  totals.balance <= 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
-                )}>
+                <div
+                  className={cn(
+                    "flex justify-between font-semibold text-sm px-3 py-2 rounded-lg",
+                    totals.balance <= 0
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-amber-50 text-amber-700",
+                  )}
+                >
                   <span>{totals.balance <= 0 ? "Paid in full" : "Balance Due"}</span>
-                  <span>{totals.balance <= 0 ? "✓" : formatCurrency(Math.abs(totals.balance))}</span>
+                  <span>
+                    {totals.balance <= 0 ? "✓" : formatCurrency(totals.balance)}
+                  </span>
                 </div>
               </div>
 
               <Separator />
 
-              {/* Validation */}
               {!patientName && (
                 <div className="flex items-center gap-2 text-xs text-amber-600">
                   <AlertCircle className="size-3.5" />
@@ -298,20 +492,29 @@ export function InvoiceScreen() {
                 </div>
               )}
 
-              {/* Action buttons */}
               <div className="flex flex-col gap-2">
                 <Button
                   className="w-full gradient-ayura text-white border-0 shadow-sm h-11"
-                  disabled={!patientName || items.length === 0}
+                  disabled={!patientName || items.length === 0 || saving}
+                  onClick={() => void handleSaveAndPdf()}
                 >
                   <FileText className="size-4 mr-2" />
                   Save & Generate PDF
                 </Button>
-                <Button variant="outline" className="w-full h-9 gap-2 text-sm">
+                <Button
+                  variant="outline"
+                  className="w-full h-9 gap-2 text-sm"
+                  disabled={!patientPhone || items.length === 0}
+                  onClick={() => void handleWhatsApp()}
+                >
                   <Share2 className="size-4" />
                   Send via WhatsApp
                 </Button>
-                <Button variant="ghost" className="w-full h-9 text-muted-foreground text-sm">
+                <Button
+                  variant="ghost"
+                  className="w-full h-9 text-muted-foreground text-sm"
+                  onClick={resetForm}
+                >
                   Discard
                 </Button>
               </div>

@@ -49,7 +49,9 @@ export function SideNav({
   const location = useLocation();
 
   const visibleItems = NAV_ITEMS.filter((item) => {
-    if (item.roleRequired === "doctor") return currentRole === "doctor";
+    if (item.roleRequired === "doctor") {
+      return currentRole === "doctor" || currentRole === "admin";
+    }
     if (item.roleRequired === "admin") return currentRole === "admin";
     return true;
   });

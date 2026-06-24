@@ -1,10 +1,35 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { db } from "@/db/database";
+import { useAppShell } from "@/hooks/use-app-shell";
+import { useClinicStore } from "@/stores/clinic-store";
+import {
+  deleteMedicine,
+  getStockStatus,
+  importMedicineRows,
+  parseMedicineCsv,
+  upsertMedicine,
+} from "@/services/stock-service";
 import { cn, formatDate } from "@/lib/utils";
 import {
   Plus,
@@ -16,57 +41,75 @@ import {
   ClipboardPaste,
   TrendingDown,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-interface Medicine {
-  id: string;
-  name: string;
-  qty: number;
-  threshold: number;
-  expiry: Date | null;
-  unit: string;
-}
-
-const SAMPLE: Medicine[] = [
-  { id: "1", name: "Ashwagandha Churna", qty: 24, threshold: 10, expiry: new Date("2026-09-15"), unit: "pkt" },
-  { id: "2", name: "Triphala Tablets", qty: 7, threshold: 10, expiry: new Date("2026-07-01"), unit: "btl" },
-  { id: "3", name: "Brahmi Oil", qty: 3, threshold: 5, expiry: new Date("2026-06-30"), unit: "btl" },
-  { id: "4", name: "Chyawanprash", qty: 18, threshold: 8, expiry: new Date("2027-03-01"), unit: "jar" },
-  { id: "5", name: "Neem Capsules", qty: 45, threshold: 15, expiry: new Date("2027-01-20"), unit: "btl" },
-];
-
-function getStockStatus(m: Medicine): "low" | "expiring" | "ok" {
-  const nowMs = Date.now();
-  const expiryMs = m.expiry ? m.expiry.getTime() : Infinity;
-  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-  if (m.qty <= m.threshold) return "low";
-  if (expiryMs - nowMs < thirtyDays) return "expiring";
-  return "ok";
-}
 
 export function StockScreen() {
+  const shell = useAppShell("Stock", "Medicine inventory");
+  const expiryAlertDays = useClinicStore((s) => s.settings?.expiryAlertDays ?? 30);
+  const medicines = useLiveQuery(() => db.medicines.toArray(), []);
   const [search, setSearch] = useState("");
-  const [medicines] = useState<Medicine[]>(SAMPLE);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    stockQty: "10",
+    unitPrice: "100",
+    minThreshold: "10",
+    expiryDate: "",
+  });
 
-  const filtered = medicines.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase()),
+  const filtered = useMemo(
+    () =>
+      (medicines ?? []).filter((m) =>
+        m.name.toLowerCase().includes(search.toLowerCase()),
+      ),
+    [medicines, search],
   );
 
-  const lowCount = medicines.filter((m) => m.qty <= m.threshold).length;
-  const expiringCount = medicines.filter((m) => {
-    const ms = m.expiry ? m.expiry.getTime() - Date.now() : Infinity;
-    return ms < 30 * 24 * 60 * 60 * 1000;
-  }).length;
+  const lowCount = (medicines ?? []).filter(
+    (m) => getStockStatus(m, expiryAlertDays) === "low",
+  ).length;
+  const expiringCount = (medicines ?? []).filter(
+    (m) => getStockStatus(m, expiryAlertDays) === "expiring",
+  ).length;
+
+  async function handleAddMedicine() {
+    if (!form.name.trim()) return;
+    await upsertMedicine({
+      name: form.name.trim(),
+      stockQty: Number(form.stockQty) || 0,
+      unitPrice: Number(form.unitPrice) || 0,
+      taxPercent: 5,
+      minThreshold: Number(form.minThreshold) || 10,
+      expiryDate: form.expiryDate ? new Date(form.expiryDate).getTime() : undefined,
+    });
+    toast.success("Medicine added");
+    setDialogOpen(false);
+    setForm({
+      name: "",
+      stockQty: "10",
+      unitPrice: "100",
+      minThreshold: "10",
+      expiryDate: "",
+    });
+  }
+
+  async function handlePasteImport() {
+    try {
+      const rows = parseMedicineCsv(pasteText);
+      if (rows.length === 0) throw new Error("No valid rows found");
+      const count = await importMedicineRows(rows);
+      toast.success(`Imported ${count} medicines`);
+      setPasteOpen(false);
+      setPasteText("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Import failed");
+    }
+  }
 
   return (
-    <AppShell title="Stock" subtitle="Medicine inventory" currentRole="front-desk" onLock={() => {}}>
+    <AppShell {...shell}>
       <div className="screen-pad flex flex-col gap-4">
-        {/* Alert pills */}
         {(lowCount > 0 || expiringCount > 0) && (
           <div className="flex gap-2 flex-wrap">
             {lowCount > 0 && (
@@ -84,7 +127,6 @@ export function StockScreen() {
           </div>
         )}
 
-        {/* Search + actions */}
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -95,11 +137,20 @@ export function StockScreen() {
               className="pl-9 h-9"
             />
           </div>
-          <Button size="sm" className="gradient-ayura text-white border-0 h-9 gap-1.5 shrink-0">
+          <Button
+            size="sm"
+            className="gradient-ayura text-white border-0 h-9 gap-1.5 shrink-0"
+            onClick={() => setDialogOpen(true)}
+          >
             <Plus className="size-4" />
             Add
           </Button>
-          <Button variant="outline" size="sm" className="h-9 gap-1.5 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 shrink-0"
+            onClick={() => setPasteOpen(true)}
+          >
             <ClipboardPaste className="size-4" />
             Paste CSV
           </Button>
@@ -107,10 +158,9 @@ export function StockScreen() {
 
         <Separator />
 
-        {/* Medicine list */}
         <div className="flex flex-col gap-2">
           {filtered.map((m) => {
-            const status = getStockStatus(m);
+            const status = getStockStatus(m, expiryAlertDays);
             return (
               <Card
                 key={m.id}
@@ -155,12 +205,12 @@ export function StockScreen() {
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                       <span>
-                        {m.qty} {m.unit} · threshold {m.threshold}
+                        {m.stockQty} units · threshold {m.minThreshold}
                       </span>
-                      {m.expiry && (
+                      {m.expiryDate && (
                         <span className={cn(status === "expiring" && "text-rose-600")}>
                           <CalendarX className="size-3 inline mr-0.5" />
-                          {formatDate(m.expiry)}
+                          {formatDate(new Date(m.expiryDate))}
                         </span>
                       )}
                     </div>
@@ -177,9 +227,28 @@ export function StockScreen() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Edit</DropdownMenuItem>
-                      <DropdownMenuItem>Update quantity</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          const qty = prompt("New quantity", String(m.stockQty));
+                          if (qty == null) return;
+                          await upsertMedicine({
+                            ...m,
+                            stockQty: Number(qty),
+                          });
+                          toast.success("Stock updated");
+                        }}
+                      >
+                        Update quantity
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={async () => {
+                          await deleteMedicine(m.id);
+                          toast.success("Medicine deleted");
+                        }}
+                      >
+                        Delete
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </CardContent>
@@ -188,6 +257,94 @@ export function StockScreen() {
           })}
         </div>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Medicine</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  value={form.stockQty}
+                  onChange={(e) => setForm({ ...form, stockQty: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Unit price</Label>
+                <Input
+                  type="number"
+                  value={form.unitPrice}
+                  onChange={(e) => setForm({ ...form, unitPrice: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Threshold</Label>
+                <Input
+                  type="number"
+                  value={form.minThreshold}
+                  onChange={(e) => setForm({ ...form, minThreshold: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Expiry</Label>
+                <Input
+                  type="date"
+                  value={form.expiryDate}
+                  onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <Button
+              className="gradient-ayura text-white border-0"
+              onClick={() => void handleAddMedicine()}
+            >
+              Save medicine
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk paste (CSV)</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Format: name, qty, threshold, expiryEpoch
+          </p>
+          <textarea
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            rows={6}
+            className="w-full rounded-lg border border-input bg-background p-3 text-sm"
+            placeholder="Ashwagandha Churna, 24, 10, 1789392000000"
+          />
+          <Button
+            className="gradient-ayura text-white border-0"
+            onClick={() => void handlePasteImport()}
+          >
+            Import rows
+          </Button>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { AyuraLogo } from "@/components/ayura/AyuraLogo";
 import { StepWizard } from "@/components/ayura/StepWizard";
 import type { WizardStep } from "@/components/ayura/StepWizard";
@@ -9,6 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import type { OnboardingDraft } from "@/types/billing";
+import { useOnboardingStore } from "@/stores/onboarding-store";
+import { completeOnboarding } from "@/services/onboarding-service";
+import { useClinicStore } from "@/stores/clinic-store";
 import {
   ArrowRight,
   ArrowLeft,
@@ -40,37 +45,9 @@ const STEPS: WizardStep[] = [
   { id: "complete", label: "Done" },
 ];
 
-interface OnboardingDraft {
-  clinicName: string;
-  address: string;
-  phone: string;
-  deviceKey: string;
-  adminPassword: string;
-  frontDeskPin: string;
-  doctorName: string;
-  doctorPin: string;
-  pharmacistName: string;
-  slotDuration: string;
-  stockThreshold: string;
-  expiryWindow: string;
-}
+interface OnboardingDraftLocal extends OnboardingDraft {}
 
-const INITIAL_DRAFT: OnboardingDraft = {
-  clinicName: "",
-  address: "",
-  phone: "",
-  deviceKey: "",
-  adminPassword: "",
-  frontDeskPin: "",
-  doctorName: "",
-  doctorPin: "",
-  pharmacistName: "",
-  slotDuration: "30",
-  stockThreshold: "10",
-  expiryWindow: "30",
-};
-
-function isStepValid(step: number, draft: OnboardingDraft): boolean {
+function isStepValid(step: number, draft: OnboardingDraftLocal): boolean {
   switch (step) {
     case 0: return true; // Welcome — always valid
     case 1: return true; // Intro — always valid
@@ -88,20 +65,38 @@ function isStepValid(step: number, draft: OnboardingDraft): boolean {
 
 export function OnboardingScreen() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<OnboardingDraft>(INITIAL_DRAFT);
+  const step = useOnboardingStore((s) => s.step);
+  const draft = useOnboardingStore((s) => s.draft);
+  const setStep = useOnboardingStore((s) => s.setStep);
+  const updateDraft = useOnboardingStore((s) => s.updateDraft);
+  const loadClinic = useClinicStore((s) => s.load);
+  const [saving, setSaving] = useState(false);
 
-  function update(key: keyof OnboardingDraft, value: string) {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  function update(key: keyof OnboardingDraftLocal, value: string) {
+    updateDraft({ [key]: value });
   }
 
-  function next() {
-    if (step < STEPS.length - 1) setStep((s) => s + 1);
-    else navigate("/access");
+  async function next() {
+    if (step < STEPS.length - 1) {
+      setStep(step + 1);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await completeOnboarding(draft);
+      await loadClinic();
+      toast.success("Clinic setup complete");
+      navigate("/access");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Setup failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function back() {
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0) setStep(step - 1);
   }
 
   const valid = isStepValid(step, draft);
@@ -509,8 +504,8 @@ export function OnboardingScreen() {
           )}
           <Button
             size="lg"
-            disabled={!valid}
-            onClick={next}
+            disabled={!valid || saving}
+            onClick={() => void next()}
             className={cn(
               "h-12 px-8 gradient-ayura text-white border-0 shadow-md shadow-ayura-green/20",
               step === STEPS.length - 1 && "px-12",

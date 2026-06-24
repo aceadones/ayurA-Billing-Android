@@ -1,10 +1,11 @@
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router";
 import { Toaster } from "sonner";
+import { AppBootstrap } from "@/components/auth/AppBootstrap";
 
 export default function App() {
   return (
-    <>
+    <AppBootstrap>
       <RouterProvider router={router} />
       <Toaster
         position="bottom-right"
@@ -17,6 +18,6 @@ export default function App() {
         }}
         richColors
       />
-    </>
+    </AppBootstrap>
   );
 }

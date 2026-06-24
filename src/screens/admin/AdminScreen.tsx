@@ -1,13 +1,28 @@
+import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { db } from "@/db/database";
+import { useAppShell } from "@/hooks/use-app-shell";
+import {
+  updateAdminPassword,
+  updateFrontDeskPin,
+} from "@/services/auth-service";
+import {
+  addDoctor,
+  addTreatment,
+} from "@/services/booking-service";
+import {
+  exportInvoicesCsv,
+  exportInvoicesXlsx,
+} from "@/services/export-service";
 import {
   KeyRound,
-  UserRound,
   Stethoscope,
   Download,
   Plus,
@@ -15,24 +30,22 @@ import {
   FileText,
   ChevronRight,
   Leaf,
-  Settings,
   Shield,
 } from "lucide-react";
 
-const DOCTORS = [
-  { name: "Dr. Veda Gayathri S", speciality: "Panchakarma", status: "active" },
-];
-
-const TREATMENTS = [
-  { name: "Panchakarma", duration: "60 min", price: 3000 },
-  { name: "Abhyanga", duration: "45 min", price: 1500 },
-  { name: "Shirodhara", duration: "45 min", price: 2000 },
-  { name: "Nadi Pariksha", duration: "20 min", price: 500 },
-];
-
 export function AdminScreen() {
+  const shell = useAppShell("Admin", "Clinic administration");
+  const doctors = useLiveQuery(() => db.doctors.filter((d) => d.active).toArray(), []);
+  const treatments = useLiveQuery(() => db.treatments.filter((t) => t.active).toArray(), []);
+
+  const [frontDesk, setFrontDesk] = useState({ current: "", next: "" });
+  const [adminPass, setAdminPass] = useState({ current: "", next: "" });
+  const [newDoctor, setNewDoctor] = useState({ name: "", pin: "", specialization: "" });
+  const [newTreatment, setNewTreatment] = useState({ name: "", fee: "", capacity: "2" });
+  const [exportRange, setExportRange] = useState({ from: "", to: "" });
+
   return (
-    <AppShell title="Admin" subtitle="Clinic administration" currentRole="admin" onLock={() => {}}>
+    <AppShell {...shell}>
       <div className="screen-pad flex flex-col gap-4">
         <Tabs defaultValue="security">
           <TabsList className="grid grid-cols-4 w-full">
@@ -54,7 +67,6 @@ export function AdminScreen() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Security — Change PINs */}
           <TabsContent value="security" className="mt-4">
             <div className="flex flex-col gap-4">
               <Card>
@@ -63,20 +75,33 @@ export function AdminScreen() {
                     <KeyRound className="size-4 text-ayura-green" />
                     Front Desk PIN
                   </CardTitle>
-                  <CardDescription className="text-xs">
-                    Used by front desk staff to unlock billing.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3 pt-0">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="currentPin" className="text-xs">Current PIN</Label>
-                    <Input id="currentPin" type="password" placeholder="Current PIN" className="h-9" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="newPin" className="text-xs">New PIN</Label>
-                    <Input id="newPin" type="password" placeholder="Min. 4 digits" className="h-9" />
-                  </div>
-                  <Button size="sm" className="gradient-ayura text-white border-0 h-9 self-start">
+                  <Input
+                    type="password"
+                    placeholder="Current PIN"
+                    value={frontDesk.current}
+                    onChange={(e) => setFrontDesk({ ...frontDesk, current: e.target.value })}
+                  />
+                  <Input
+                    type="password"
+                    placeholder="New PIN (min 4 digits)"
+                    value={frontDesk.next}
+                    onChange={(e) => setFrontDesk({ ...frontDesk, next: e.target.value })}
+                  />
+                  <Button
+                    size="sm"
+                    className="gradient-ayura text-white border-0 h-9 self-start"
+                    onClick={async () => {
+                      try {
+                        await updateFrontDeskPin(frontDesk.current, frontDesk.next);
+                        toast.success("Front desk PIN updated");
+                        setFrontDesk({ current: "", next: "" });
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Update failed");
+                      }
+                    }}
+                  >
                     Update PIN
                   </Button>
                 </CardContent>
@@ -90,15 +115,31 @@ export function AdminScreen() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3 pt-0">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="curAdminPass" className="text-xs">Current Password</Label>
-                    <Input id="curAdminPass" type="password" className="h-9" />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="newAdminPass" className="text-xs">New Password</Label>
-                    <Input id="newAdminPass" type="password" placeholder="Min. 8 chars" className="h-9" />
-                  </div>
-                  <Button size="sm" className="gradient-ayura text-white border-0 h-9 self-start">
+                  <Input
+                    type="password"
+                    placeholder="Current password"
+                    value={adminPass.current}
+                    onChange={(e) => setAdminPass({ ...adminPass, current: e.target.value })}
+                  />
+                  <Input
+                    type="password"
+                    placeholder="New password (min 8 chars)"
+                    value={adminPass.next}
+                    onChange={(e) => setAdminPass({ ...adminPass, next: e.target.value })}
+                  />
+                  <Button
+                    size="sm"
+                    className="gradient-ayura text-white border-0 h-9 self-start"
+                    onClick={async () => {
+                      try {
+                        await updateAdminPassword(adminPass.current, adminPass.next);
+                        toast.success("Admin password updated");
+                        setAdminPass({ current: "", next: "" });
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Update failed");
+                      }
+                    }}
+                  >
                     Update Password
                   </Button>
                 </CardContent>
@@ -106,102 +147,207 @@ export function AdminScreen() {
             </div>
           </TabsContent>
 
-          {/* Doctors */}
           <TabsContent value="doctors" className="mt-4">
             <div className="flex flex-col gap-3">
-              <div className="flex justify-end">
-                <Button size="sm" className="gradient-ayura text-white border-0 h-8 gap-1.5">
-                  <Plus className="size-3.5" />
-                  Add Doctor
-                </Button>
-              </div>
-              {DOCTORS.map((d) => (
-                <Card key={d.name}>
+              <Card>
+                <CardContent className="pt-4 flex flex-col gap-3">
+                  <Input
+                    placeholder="Doctor name"
+                    value={newDoctor.name}
+                    onChange={(e) => setNewDoctor({ ...newDoctor, name: e.target.value })}
+                  />
+                  <Input
+                    placeholder="PIN"
+                    type="password"
+                    value={newDoctor.pin}
+                    onChange={(e) => setNewDoctor({ ...newDoctor, pin: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Specialization"
+                    value={newDoctor.specialization}
+                    onChange={(e) =>
+                      setNewDoctor({ ...newDoctor, specialization: e.target.value })
+                    }
+                  />
+                  <Button
+                    size="sm"
+                    className="gradient-ayura text-white border-0 h-8 gap-1.5 self-start"
+                    onClick={async () => {
+                      try {
+                        await addDoctor(newDoctor.name, newDoctor.pin, newDoctor.specialization);
+                        toast.success("Doctor added");
+                        setNewDoctor({ name: "", pin: "", specialization: "" });
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Failed");
+                      }
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    Add Doctor
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {(doctors ?? []).map((d) => (
+                <Card key={d.id}>
                   <CardContent className="py-3 px-4 flex items-center gap-3">
                     <div className="p-2.5 bg-ayura-green-light rounded-xl shrink-0">
                       <Stethoscope className="size-4 text-ayura-green" />
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">{d.name}</p>
-                      <p className="text-xs text-muted-foreground">{d.speciality}</p>
+                      <p className="text-xs text-muted-foreground">{d.specialization}</p>
                     </div>
-                    <Button variant="ghost" size="sm" className="size-8 p-0">
-                      <ChevronRight className="size-4" />
-                    </Button>
+                    <ChevronRight className="size-4 text-muted-foreground" />
                   </CardContent>
                 </Card>
               ))}
             </div>
           </TabsContent>
 
-          {/* Treatments */}
           <TabsContent value="treatments" className="mt-4">
             <div className="flex flex-col gap-3">
-              <div className="flex justify-end">
-                <Button size="sm" className="gradient-ayura text-white border-0 h-8 gap-1.5">
-                  <Plus className="size-3.5" />
-                  Add Treatment
-                </Button>
-              </div>
-              {TREATMENTS.map((t) => (
-                <Card key={t.name}>
+              <Card>
+                <CardContent className="pt-4 flex flex-col gap-3">
+                  <Input
+                    placeholder="Treatment name"
+                    value={newTreatment.name}
+                    onChange={(e) => setNewTreatment({ ...newTreatment, name: e.target.value })}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      type="number"
+                      placeholder="Fee"
+                      value={newTreatment.fee}
+                      onChange={(e) => setNewTreatment({ ...newTreatment, fee: e.target.value })}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Slot capacity"
+                      value={newTreatment.capacity}
+                      onChange={(e) =>
+                        setNewTreatment({ ...newTreatment, capacity: e.target.value })
+                      }
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    className="gradient-ayura text-white border-0 h-8 gap-1.5 self-start"
+                    onClick={async () => {
+                      try {
+                        await addTreatment(
+                          newTreatment.name,
+                          Number(newTreatment.fee) || 0,
+                          Number(newTreatment.capacity) || 2,
+                        );
+                        toast.success("Treatment added");
+                        setNewTreatment({ name: "", fee: "", capacity: "2" });
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Failed");
+                      }
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    Add Treatment
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {(treatments ?? []).map((t) => (
+                <Card key={t.id}>
                   <CardContent className="py-3 px-4 flex items-center gap-3">
                     <div className="p-2.5 bg-ayura-green-light rounded-xl shrink-0">
                       <Leaf className="size-4 text-ayura-green" />
                     </div>
                     <div className="flex-1">
                       <p className="font-medium text-sm">{t.name}</p>
-                      <p className="text-xs text-muted-foreground">{t.duration}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Capacity {t.slotCapacity}
+                      </p>
                     </div>
                     <span className="text-sm font-semibold text-ayura-green">
-                      ₹{t.price.toLocaleString("en-IN")}
+                      ₹{t.fee.toLocaleString("en-IN")}
                     </span>
-                    <Button variant="ghost" size="sm" className="size-8 p-0">
-                      <ChevronRight className="size-4" />
-                    </Button>
                   </CardContent>
                 </Card>
               ))}
             </div>
           </TabsContent>
 
-          {/* Export */}
           <TabsContent value="export" className="mt-4">
-            <div className="flex flex-col gap-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Download className="size-4 text-ayura-green" />
-                    Export Invoice Data
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Download all invoice records for accounting.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3 pt-0">
-                  <div className="flex gap-3">
-                    <div className="flex flex-col gap-1.5 flex-1">
-                      <Label htmlFor="fromDate" className="text-xs">From</Label>
-                      <Input id="fromDate" type="date" className="h-9 text-sm" />
-                    </div>
-                    <div className="flex flex-col gap-1.5 flex-1">
-                      <Label htmlFor="toDate" className="text-xs">To</Label>
-                      <Input id="toDate" type="date" className="h-9 text-sm" />
-                    </div>
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Download className="size-4 text-ayura-green" />
+                  Export Invoice Data
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Download invoice records for accounting.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 pt-0">
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs">From</Label>
+                    <Input
+                      type="date"
+                      className="h-9 mt-1"
+                      value={exportRange.from}
+                      onChange={(e) =>
+                        setExportRange({ ...exportRange, from: e.target.value })
+                      }
+                    />
                   </div>
-                  <div className="flex gap-3">
-                    <Button variant="outline" className="flex-1 h-10 gap-2">
-                      <FileText className="size-4" />
-                      Export CSV
-                    </Button>
-                    <Button variant="outline" className="flex-1 h-10 gap-2">
-                      <FileSpreadsheet className="size-4" />
-                      Export XLSX
-                    </Button>
+                  <div className="flex-1">
+                    <Label className="text-xs">To</Label>
+                    <Input
+                      type="date"
+                      className="h-9 mt-1"
+                      value={exportRange.to}
+                      onChange={(e) => setExportRange({ ...exportRange, to: e.target.value })}
+                    />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-10 gap-2"
+                    onClick={async () => {
+                      await exportInvoicesCsv(
+                        exportRange.from
+                          ? new Date(exportRange.from).getTime()
+                          : undefined,
+                        exportRange.to
+                          ? new Date(exportRange.to).getTime()
+                          : undefined,
+                      );
+                      toast.success("CSV exported");
+                    }}
+                  >
+                    <FileText className="size-4" />
+                    Export CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-10 gap-2"
+                    onClick={async () => {
+                      await exportInvoicesXlsx(
+                        exportRange.from
+                          ? new Date(exportRange.from).getTime()
+                          : undefined,
+                        exportRange.to
+                          ? new Date(exportRange.to).getTime()
+                          : undefined,
+                      );
+                      toast.success("XLSX exported");
+                    }}
+                  >
+                    <FileSpreadsheet className="size-4" />
+                    Export XLSX
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
