@@ -1,21 +1,27 @@
 import { db } from "@/db/database";
 import { hashSecret } from "@/services/password-hasher";
-import type { OnboardingDraft } from "@/types/billing";
+import type { ClinicSettings, OnboardingDraft } from "@/types/billing";
 import { newId } from "@/lib/id";
 
-export async function completeOnboarding(draft: OnboardingDraft): Promise<void> {
+export async function completeOnboarding(draft: OnboardingDraft): Promise<ClinicSettings> {
   const now = Date.now();
-  const [
-    adminPasswordHash,
-    frontDeskPinHash,
-    doctorPinHash,
-    deviceTokenHash,
-  ] = await Promise.all([
-    hashSecret(draft.adminPassword),
-    hashSecret(draft.frontDeskPin),
-    hashSecret(draft.doctorPin),
-    hashSecret(draft.deviceKey),
-  ]);
+
+  let adminPasswordHash: string;
+  let frontDeskPinHash: string;
+  let doctorPinHash: string;
+  let deviceTokenHash: string;
+
+  try {
+    [adminPasswordHash, frontDeskPinHash, doctorPinHash, deviceTokenHash] =
+      await Promise.all([
+        hashSecret(draft.adminPassword),
+        hashSecret(draft.frontDeskPin),
+        hashSecret(draft.doctorPin),
+        hashSecret(draft.deviceKey),
+      ]);
+  } catch (error) {
+    throw new Error("Failed to secure credentials. Please try again.");
+  }
 
   const pharmacistId = newId("ph");
   const doctorId = newId("doc");
@@ -32,7 +38,7 @@ export async function completeOnboarding(draft: OnboardingDraft): Promise<void> 
       db.doctorBookings,
     ],
     async () => {
-      await db.clinicSettings.put({
+      const settings: ClinicSettings = {
         id: "default",
         clinicName: draft.clinicName,
         address: draft.address,
@@ -46,7 +52,9 @@ export async function completeOnboarding(draft: OnboardingDraft): Promise<void> 
         adminPasswordHash,
         frontDeskPinHash,
         onboardingComplete: true,
-      });
+      };
+
+      await db.clinicSettings.put(settings);
 
       await db.doctors.put({
         id: doctorId,
@@ -128,10 +136,17 @@ export async function completeOnboarding(draft: OnboardingDraft): Promise<void> 
           },
         ]);
       }
+
+      return settings;
     },
   );
 
   localStorage.setItem("ayura_onboarding_draft", JSON.stringify(draft));
+  const saved = await db.clinicSettings.get("default");
+  if (!saved?.onboardingComplete) {
+    throw new Error("Setup did not save correctly. Please try again.");
+  }
+  return saved;
 }
 
 export async function verifyDeviceKey(deviceKey: string): Promise<boolean> {

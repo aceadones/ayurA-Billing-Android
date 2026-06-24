@@ -13,7 +13,12 @@ export const useClinicStore = create<ClinicStore>((set) => ({
   loading: false,
   load: async () => {
     set({ loading: true });
-    const settings = await getSettings();
-    set({ settings: settings ?? null, loading: false });
+    try {
+      const settings = await getSettings();
+      set({ settings: settings ?? null, loading: false });
+    } catch (error) {
+      console.error("Failed to load clinic settings:", error);
+      set({ settings: null, loading: false });
+    }
   },
 }));

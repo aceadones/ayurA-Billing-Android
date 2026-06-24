@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { isOnboardingComplete } from "@/db/database";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useOnboardingStatus } from "@/hooks/use-onboarding-status";
 import { useSessionStore } from "@/stores/session-store";
 import type { AppRole } from "@/components/ayura/RoleBadge";
 
@@ -14,7 +13,7 @@ function LoadingScreen() {
 }
 
 export function RootRedirect() {
-  const onboardingDone = useLiveQuery(() => isOnboardingComplete(), [], false);
+  const onboardingDone = useOnboardingStatus();
   const unlocked = useSessionStore((s) => s.isUnlocked());
 
   if (onboardingDone === undefined) return <LoadingScreen />;
@@ -24,14 +23,14 @@ export function RootRedirect() {
 }
 
 export function OnboardingOnly() {
-  const onboardingDone = useLiveQuery(() => isOnboardingComplete(), [], false);
+  const onboardingDone = useOnboardingStatus();
   if (onboardingDone === undefined) return <LoadingScreen />;
   if (onboardingDone) return <Navigate to="/access" replace />;
   return <Outlet />;
 }
 
 export function AccessOnly() {
-  const onboardingDone = useLiveQuery(() => isOnboardingComplete(), [], false);
+  const onboardingDone = useOnboardingStatus();
   const unlocked = useSessionStore((s) => s.isUnlocked());
 
   if (onboardingDone === undefined) return <LoadingScreen />;
@@ -42,7 +41,7 @@ export function AccessOnly() {
 
 export function RequireAuth({ roles }: { roles?: AppRole[] }) {
   const location = useLocation();
-  const onboardingDone = useLiveQuery(() => isOnboardingComplete(), [], false);
+  const onboardingDone = useOnboardingStatus();
   const activeRole = useSessionStore((s) => s.activeRole);
   const unlocked = useSessionStore((s) => s.isUnlocked());
   const autoLock = useSessionStore((s) => s.autoLockIfExpired);

@@ -69,7 +69,7 @@ export function OnboardingScreen() {
   const draft = useOnboardingStore((s) => s.draft);
   const setStep = useOnboardingStore((s) => s.setStep);
   const updateDraft = useOnboardingStore((s) => s.updateDraft);
-  const loadClinic = useClinicStore((s) => s.load);
+  const setClinicSettings = useClinicStore.setState;
   const [saving, setSaving] = useState(false);
 
   function update(key: keyof OnboardingDraftLocal, value: string) {
@@ -84,11 +84,13 @@ export function OnboardingScreen() {
 
     setSaving(true);
     try {
-      await completeOnboarding(draft);
-      await loadClinic();
+      const settings = await completeOnboarding(draft);
+      setClinicSettings({ settings, loading: false });
+      useOnboardingStore.getState().reset();
       toast.success("Clinic setup complete");
-      navigate("/access");
+      navigate("/access", { replace: true });
     } catch (error) {
+      console.error("Onboarding failed:", error);
       toast.error(error instanceof Error ? error.message : "Setup failed");
     } finally {
       setSaving(false);
@@ -532,7 +534,11 @@ export function OnboardingScreen() {
             )}
           >
             {step === STEPS.length - 1 ? (
-              <>Enter App <ArrowRight className="ml-2 size-4" /></>
+              saving ? (
+                <>Setting up…</>
+              ) : (
+                <>Enter App <ArrowRight className="ml-2 size-4" /></>
+              )
             ) : (
               <>Continue <ArrowRight className="ml-2 size-4" /></>
             )}
