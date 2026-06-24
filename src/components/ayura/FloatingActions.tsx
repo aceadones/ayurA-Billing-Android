@@ -205,8 +205,8 @@ function FabAction({ icon: Icon, label, onClick, index, visible }: FabActionProp
         onClick={onClick}
         className={cn(
           "size-11 rounded-full shadow-lg flex items-center justify-center",
-          "bg-white border border-border text-ayura-primary",
-          "hover:bg-ayura-primary hover:text-white hover:border-ayura-primary",
+          "bg-white border border-border text-ayura-green",
+          "hover:bg-ayura-green hover:text-white hover:border-ayura-green",
           "transition-all duration-150 active:scale-95",
         )}
       >
@@ -271,10 +271,9 @@ export function FloatingActions() {
           onClick={() => setOpen((v) => !v)}
           className={cn(
             "size-14 rounded-full shadow-xl flex items-center justify-center",
+            "bg-ayura-green text-white hover:bg-ayura-green-dark",
             "transition-all duration-300 active:scale-95",
-            open
-              ? "bg-[#1C1917] text-white rotate-45"
-              : "bg-ayura-primary text-white hover:bg-ayura-primary-dark",
+            open && "rotate-45",
           )}
           aria-label={open ? "Close actions" : "Quick actions"}
         >
