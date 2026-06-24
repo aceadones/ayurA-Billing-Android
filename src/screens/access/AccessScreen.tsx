@@ -32,10 +32,19 @@ export function AccessScreen() {
     setStep("pin-entry");
   }
 
-  async function submitPin(value: string) {
-    if (!selectedRole || checking) return;
+  function handlePinChange(value: string) {
     setPin(value);
     setError("");
+
+    const maxLen = selectedRole === "admin" ? 12 : 6;
+    // Only auto-check when all digit slots are filled (avoids checking a partial PIN)
+    if (value.length === maxLen) {
+      void verifyPin(value);
+    }
+  }
+
+  async function verifyPin(value: string) {
+    if (!selectedRole || checking) return;
 
     const minLen = selectedRole === "admin" ? 8 : 4;
     if (value.length < minLen) return;
@@ -130,9 +139,20 @@ export function AccessScreen() {
               <PinPad
                 value={pin}
                 maxLength={selectedRole === "admin" ? 12 : 6}
-                onChange={(value) => void submitPin(value)}
+                onChange={handlePinChange}
                 error={error}
               />
+
+              <Button
+                className="gradient-ayura text-white border-0 min-w-[160px]"
+                disabled={
+                  checking ||
+                  pin.length < (selectedRole === "admin" ? 8 : 4)
+                }
+                onClick={() => void verifyPin(pin)}
+              >
+                {checking ? "Checking…" : "Unlock"}
+              </Button>
 
               <Button
                 variant="ghost"
