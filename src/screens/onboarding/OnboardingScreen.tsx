@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { AyuraLogo } from "@/components/ayura/AyuraLogo";
+import { ClinicLogo } from "@/components/ayura/ClinicLogo";
 import { StepWizard } from "@/components/ayura/StepWizard";
 import type { WizardStep } from "@/components/ayura/StepWizard";
 import { PinPad } from "@/components/ayura/PinPad";
@@ -116,15 +116,15 @@ export function OnboardingScreen() {
           {/* STEP 0 — Welcome */}
           {step === 0 && (
             <div className="flex flex-col items-center text-center gap-8">
-              <div className="w-20 h-20 gradient-ayura rounded-3xl flex items-center justify-center shadow-lg shadow-ayura-green/20">
-                <Leaf className="size-9 text-white" />
-              </div>
-              <div>
-                <AyuraLogo size="xl" className="justify-center mb-3" />
-                <p className="text-muted-foreground text-base leading-relaxed mt-2 max-w-xs mx-auto">
-                  Complete clinic management for ayurA Wellness Centre
-                </p>
-              </div>
+              <ClinicLogo
+                clinicName={draft.clinicName || "Your Clinic"}
+                logoUri={draft.logoUri}
+                size="xl"
+                layout="stacked"
+              />
+              <p className="text-muted-foreground text-base leading-relaxed max-w-xs mx-auto">
+                Set up billing, stock, and appointments for your clinic.
+              </p>
               <div className="grid grid-cols-3 gap-3 w-full text-center">
                 {[
                   ["Billing", "Invoices & estimates"],
@@ -234,6 +234,26 @@ export function OnboardingScreen() {
                     />
                   </div>
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="logoUri">Clinic logo URL (optional)</Label>
+                  <Input
+                    id="logoUri"
+                    type="url"
+                    placeholder="https://your-clinic.com/logo.png"
+                    value={draft.logoUri ?? ""}
+                    onChange={(e) => update("logoUri", e.target.value)}
+                  />
+                </div>
+                {(draft.logoUri || draft.clinicName) && (
+                  <div className="flex justify-center pt-2">
+                    <ClinicLogo
+                      clinicName={draft.clinicName || "Your Clinic"}
+                      logoUri={draft.logoUri}
+                      size="md"
+                      layout="stacked"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

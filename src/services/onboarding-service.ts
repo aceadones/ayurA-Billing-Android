@@ -37,6 +37,7 @@ export async function completeOnboarding(draft: OnboardingDraft): Promise<void> 
         clinicName: draft.clinicName,
         address: draft.address,
         phone: draft.phone,
+        logoUri: draft.logoUri || undefined,
         slotDurationMinutes: parseInt(draft.slotDuration, 10) || 30,
         stockThresholdDefault: parseInt(draft.stockThreshold, 10) || 10,
         expiryAlertDays: parseInt(draft.expiryWindow, 10) || 30,

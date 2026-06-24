@@ -8,7 +8,7 @@ import type { AppRole } from "@/components/ayura/RoleBadge";
 function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <p className="text-muted-foreground text-sm">Loading ayurA Billing…</p>
+      <p className="text-muted-foreground text-sm">Loading…</p>
     </div>
   );
 }

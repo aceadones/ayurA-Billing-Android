@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { AyuraLogo } from "@/components/ayura/AyuraLogo";
+import { ClinicLogo } from "@/components/ayura/ClinicLogo";
+import { useClinicStore } from "@/stores/clinic-store";
 import { RoleCard } from "@/components/ayura/RoleBadge";
 import type { AppRole } from "@/components/ayura/RoleBadge";
 import { PinPad } from "@/components/ayura/PinPad";
@@ -10,7 +11,6 @@ import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { verifyRoleCredential } from "@/services/auth-service";
 import { useSessionStore } from "@/stores/session-store";
-import { useClinicStore } from "@/stores/clinic-store";
 
 type AuthStep = "role-select" | "pin-entry";
 
@@ -18,6 +18,7 @@ export function AccessScreen() {
   const navigate = useNavigate();
   const unlock = useSessionStore((s) => s.unlock);
   const clinicName = useClinicStore((s) => s.settings?.clinicName);
+  const logoUri = useClinicStore((s) => s.settings?.logoUri);
   const [step, setStep] = useState<AuthStep>("role-select");
   const [selectedRole, setSelectedRole] = useState<AppRole | null>(null);
   const [pin, setPin] = useState("");
@@ -58,7 +59,7 @@ export function AccessScreen() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <div className="flex items-center justify-between px-6 pt-6 pb-4">
-        <AyuraLogo size="md" />
+        <ClinicLogo clinicName={clinicName} logoUri={logoUri} size="md" />
         <div className="flex flex-col items-end">
           {clinicName && (
             <p className="text-xs font-medium text-foreground">{clinicName}</p>
@@ -150,9 +151,9 @@ export function AccessScreen() {
       </div>
 
       <div className="py-4 text-center">
-        <p className="text-xs text-muted-foreground">
-          ayurA Billing • Powered by NextLayer Labs
-        </p>
+        {clinicName && (
+          <p className="text-xs text-muted-foreground">{clinicName}</p>
+        )}
       </div>
     </div>
   );

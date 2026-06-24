@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { AyuraLogo } from "@/components/ayura/AyuraLogo";
+import { ClinicLogo } from "@/components/ayura/ClinicLogo";
+import { useClinicStore } from "@/stores/clinic-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -47,6 +48,7 @@ export function SideNav({
   onLock,
 }: SideNavProps) {
   const location = useLocation();
+  const settings = useClinicStore((s) => s.settings);
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.roleRequired === "doctor") {
@@ -71,13 +73,19 @@ export function SideNav({
         )}
       >
         {collapsed ? (
-          <div className="flex items-center justify-center size-9 bg-white/10 rounded-xl">
-            <span className="font-display font-bold text-lg text-[#C9973A]">
-              a
-            </span>
-          </div>
+          <ClinicLogo
+            clinicName={settings?.clinicName}
+            logoUri={settings?.logoUri}
+            size="sm"
+            variant="icon-only"
+          />
         ) : (
-          <AyuraLogo size="sm" variant="white" />
+          <ClinicLogo
+            clinicName={settings?.clinicName}
+            logoUri={settings?.logoUri}
+            size="sm"
+            variant="white"
+          />
         )}
       </div>
 

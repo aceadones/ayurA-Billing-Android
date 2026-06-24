@@ -54,6 +54,7 @@ export interface OnboardingDraft {
   doctorName: string;
   doctorPin: string;
   pharmacistName: string;
+  logoUri?: string;
   slotDuration: string;
   stockThreshold: string;
   expiryWindow: string;
